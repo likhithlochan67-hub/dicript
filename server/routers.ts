@@ -2,6 +2,8 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
+import { z } from "zod";
+import { detectWithAI } from "./aiDetection";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -15,6 +17,15 @@ export const appRouter = router({
         success: true,
       } as const;
     }),
+  }),
+
+  detection: router({
+    analyze: publicProcedure
+      .input(z.object({
+        content: z.string().min(40).max(30000),
+        title: z.string().trim().min(1).max(120).default("Untitled analysis"),
+      }))
+      .mutation(async ({ input }) => detectWithAI(input.content, input.title)),
   }),
 
   // TODO: add feature routers here, e.g.

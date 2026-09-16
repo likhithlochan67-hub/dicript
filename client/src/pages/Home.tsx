@@ -3,6 +3,7 @@ import { ArrowRight, BarChart3, Check, ChevronDown, Clipboard, Copy, FileText, H
 import { toast } from "sonner";
 import { analyzeText, sampleText, type DetectionResult, type Confidence } from "@/lib/detection";
 import { getSessionId, supabase } from "@/lib/supabase";
+import { trpc } from "@/lib/trpc";
 
 type View = "Detector" | "History";
 type HistoryItem = { id: string; title: string; ai_probability: number; readability: number; word_count: number; confidence: Confidence; created_at: string };
@@ -32,6 +33,7 @@ export default function Home() {
   const [expandedSentence, setExpandedSentence] = useState(0);
   const sessionId = useMemo(() => getSessionId(), []);
   const wordCount = useMemo(() => content.trim() ? content.trim().split(/\s+/).length : 0, [content]);
+  const detectMutation = trpc.detection.analyze.useMutation();
 
   useEffect(() => { if (!supabase) return; void supabase.from("dicript_analyses").select("id,title,ai_probability,readability,word_count,confidence,created_at").eq("session_id", sessionId).order("created_at", { ascending: false }).limit(12).then(({ data }) => { if (data) setHistory(data as HistoryItem[]); }); }, [sessionId]);
 
@@ -43,7 +45,7 @@ export default function Home() {
     setHistory((current) => [data as HistoryItem, ...current.filter((item) => item.id !== data.id)].slice(0, 12));
   };
 
-  const runAnalysis = async () => { if (content.trim().length < 40) { toast.error("Add a little more text so Dicript can inspect real writing patterns."); return; } setIsAnalyzing(true); await new Promise((resolve) => setTimeout(resolve, 520)); const next = analyzeText(content, title.trim() || "Untitled analysis"); setResult(next); setExpandedSentence(0); setIsAnalyzing(false); void persistResult(next); };
+  const runAnalysis = async () => { if (content.trim().length < 40) { toast.error("Add a little more text so Dicript can inspect real writing patterns."); return; } setIsAnalyzing(true); try { const next = await detectMutation.mutateAsync({ content, title: title.trim() || "Untitled analysis" }); setResult(next); setExpandedSentence(0); void persistResult(next); } catch (error) { const fallback = analyzeText(content, title.trim() || "Untitled analysis"); setResult(fallback); setExpandedSentence(0); toast.warning("AI service was unavailable, so Dicript showed a local signal estimate."); console.warn("[Dicript] detection request failed", error); } finally { setIsAnalyzing(false); } };
   const useSample = () => { setTitle("Sample editorial draft"); setContent(sampleText); toast.success("Sample loaded. Run the analysis when you’re ready."); };
   const reset = () => { setContent(""); setTitle("Untitled analysis"); setResult(null); };
   const copyReport = async () => { if (!result) return; await navigator.clipboard?.writeText(`Dicript report\nAI-like signals: ${result.aiProbability}%\nConfidence: ${result.confidence}\nReadability: ${result.readability}/100\nWords analyzed: ${result.wordCount}`); setCopied(true); toast.success("Report copied to clipboard."); window.setTimeout(() => setCopied(false), 1600); };
